@@ -1,0 +1,133 @@
+url <- "https://archive.ics.uci.edu/ml/machine-learning-databases/00228/smsspamcollection.zip"
+
+if (!file.exists("smsspamcollection.zip")) 
+{
+  download.file(url=url, destfile="smsspamcollection.zip", method="curl")
+}
+unzip("smsspamcollection.zip")
+
+data_text <- read.delim("SMSSpamCollection", sep="\t", header=F, colClasses="character", quote="")
+
+str(data_text)
+head(data_text)
+
+colnames(data_text)
+
+
+colnames(data_text) <- c("Class", "Text")
+colnames(data_text)
+
+data_text$Class <- factor(data_text$Class)
+prop.table(table(data_text$Class))
+
+
+
+
+# Data Cleaning
+# Here you have to load these libraries, if you did not install them, please install first and then call following these two library() functions
+library(tm)
+
+library(SnowballC)
+
+corpus = VCorpus(VectorSource(data_text$Text))
+as.character(corpus[[1]])
+
+corpus = tm_map(corpus, content_transformer(tolower))
+corpus = tm_map(corpus, removeNumbers)
+corpus = tm_map(corpus, removePunctuation)
+corpus = tm_map(corpus, removeWords, stopwords("english"))
+corpus = tm_map(corpus, stemDocument)
+corpus = tm_map(corpus, stripWhitespace)
+as.character(corpus[[1]])
+
+dtm = DocumentTermMatrix(corpus)
+dtm
+
+dtm = removeSparseTerms(dtm, 0.999)
+
+dim(dtm)
+
+inspect(dtm[40:50, 10:15])
+
+convert_count <- function(x) {
+  y <- ifelse(x > 0, 1,0)
+  y <- factor(y, levels=c(0,1), labels=c("No", "Yes"))
+  y
+}
+
+# Apply the convert_count function to get final training and testing DTMs
+datasetNB <- apply(dtm, 2, convert_count)
+
+dataset = as.data.frame(as.matrix(datasetNB))
+
+freq<- sort(colSums(as.matrix(dtm)), decreasing=TRUE)
+tail(freq, 10)
+
+findFreqTerms(dtm, lowfreq=60) #identifying terms that appears frequently
+
+#Plot Word Frequencies
+#Here also install package first, if you did not
+
+library(ggplot2)
+
+wf<- data.frame(word=names(freq), freq=freq)
+head(wf)
+
+
+pp <- ggplot(subset(wf, freq>100), aes(x=reorder(word, -freq), y =freq)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x=element_text(angle=45, hjust=1))
+pp
+library("wordcloud")
+
+library("RColorBrewer")
+
+set.seed(1234)
+wordcloud(words = wf$word, freq = wf$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+dataset$Class = data_text$Class
+str(dataset$Class)
+
+
+# Data Analysis & Model Building
+set.seed(222)
+split = sample(2,nrow(dataset),prob = c(0.75,0.25),replace = TRUE)
+train_set = dataset[split == 1,]
+test_set = dataset[split == 2,] 
+
+prop.table(table(train_set$Class))
+
+prop.table(table(test_set$Class))
+
+library(randomForest)
+
+
+################################################################################################
+#                                                                                              #
+#                 BE CAUTIOUS! FOLLOWING 5 LINES TAKE TOO MUCH TIME(10 MINUTES)                #
+#                                                                                              #
+################################################################################################
+rf_classifier = randomForest(x = train_set[-1210],
+                             y = train_set$Class,
+                             ntree = 300)
+
+rf_classifier
+
+
+# Predicting the Test set results
+rf_pred = predict(rf_classifier, newdata = test_set[-1210])
+
+# Making the Confusion Matrix
+library(caret)
+
+
+confusionMatrix(table(rf_pred,test_set$Class))
+
+plot(table(rf_pred,test_set$Class))
+
+
+
+# Accuracy : 1.0     
+
